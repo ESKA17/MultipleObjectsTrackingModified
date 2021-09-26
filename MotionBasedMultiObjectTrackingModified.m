@@ -20,7 +20,7 @@ while hasFrame(obj.reader)
     [H,T,R] = hough(out);
     P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
     lines = houghlines(BW, T, R, P, 'FillGap', 5, 'MinLength', 7);
-    out = uint8(repmat(out, [1, 1, 3])) .* 255;
+    out = uint8(repmat(~out, 1, 1, 3)) .* 255;
     for k = 1:length(lines)
         xy = [lines(k).point1; lines(k).point2];
         xspace = xy(1, 1):xy(2, 1);
