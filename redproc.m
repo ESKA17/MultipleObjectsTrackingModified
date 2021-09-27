@@ -7,8 +7,8 @@ Isub = imbinarize(Isub,0.1);
 
 Isub = bwareaopen(Isub, 300);
 Isub = uint8(repmat(Isub, 1, 1, 3));
-Isub(find(Isub == 0)) = 255;
-Isub(find(Isub(:, :, 1) == 1)) = 255;
+Isub(Isub == 0) = 255;
+Isub(Isub(:, :, 1) == 1) = 255;
 imshowpair(I, Isub, 'montage')
 
 
