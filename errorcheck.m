@@ -40,6 +40,6 @@ out = uint8(repmat(out, 1, 1, 3)) .* 255;
             xy(1, 2) - xy(2, 2)];
         end
     end
-    mask = zeros(size(BW));
+    mask = ones(size(BW));
     mask(find(out(:, :, 2)> 200 & out(:, :, 1) == 0 & ...
-        out(:, :, 1) == 0)) = 1;
+        out(:, :, 1) == 0)) = 0;

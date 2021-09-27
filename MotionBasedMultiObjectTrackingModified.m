@@ -21,18 +21,30 @@ out = edge(I, 'Roberts');
 P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
 lines = houghlines(BW, T, R, P, 'FillGap', 5, 'MinLength', 7);
 out = uint8(repmat(out, 1, 1, 3)) .* 255;
+f = figure();
+width = 1920;
+height = 1080;
+set(gca, 'Units','pixels', 'Visible', 'off')
+set(f,'Position',[0 0 width height])
+set(f,'Renderer', 'ZBuffer')
+imshow(out), hold on
+truesize;
     for k = 1:length(lines)
         xy = [lines(k).point1; lines(k).point2];
-        xspace = xy(1, 1):xy(2, 1);
-        yspace = fix(xy(1, 2) + xspace*(xy(2,2)-xy(1, 2))/(xy(2, 1)-xy(1, 1)));
-        if sum(yspace < 0) > 0
-            yspace = yspace(yspace > 0);
-            xspace = xspace(1:length(yspace));
-        end
-         for i = 1:length(xspace)
-            out(yspace(i), xspace(i),1) = 0;
-            out(yspace(i), xspace(i),3) = 0;
-        end
+        plot(xy(:,1), xy(:,2), 'LineWidth', 2, 'Color','green');
+        set(gca, 'Visible', 'off')
+   
+
+%         xspace = xy(1, 1):xy(2, 1);
+%         yspace = fix(xy(1, 2) + xspace*(xy(2,2)-xy(1, 2))/(xy(2, 1)-xy(1, 1)));
+%         if sum(yspace < 0) > 0
+%             yspace = yspace(yspace > 0);
+%             xspace = xspace(1:length(yspace));
+%         end
+%          for i = 1:length(xspace)
+%             out(yspace(i), xspace(i),1) = 0;
+%             out(yspace(i), xspace(i),3) = 0;
+%         end
          if xy(1, 2) <= xy(2, 2)
         centroids(k, :) = [xy(1, 1) + (xy(2, 1) - xy(1, 1))/2, ...
             xy(1, 2) + (xy(2, 2) - xy(1, 2))/2];
@@ -45,10 +57,18 @@ out = uint8(repmat(out, 1, 1, 3)) .* 255;
             xy(1, 2) - xy(2, 2)];
         end
     end
-    
-    mask = zeros(size(BW));
-    mask(find(out(:, :, 2)> 200 & out(:, :, 1) == 0 & ...
-        out(:, :, 1) == 0)) = 1;
+%     frame = out;
+        hold off
+        frame = getframe(gcf).cdata;
+        clf 
+        close
+    Isub = imsubtract(frame(:,:,2), rgb2gray(frame));
+    mask = imbinarize(Isub);
+%     stats = regionprops(mask, 'Centroid', 'BoundingBox');
+%     centroids = cat(1, stats.Centroid);
+%     bboxes = cat(1, stats.BoundingBox);
+
+
     predictNewLocationsOfTracks();
     [assignments, unassignedTracks, unassignedDetections] = ...
         detectionToTrackAssignment();
@@ -76,6 +96,7 @@ close(video);
         % and one to display the foreground mask.
         obj.maskPlayer = vision.VideoPlayer('Position', [740, 400, 700, 400]);
         obj.videoPlayer = vision.VideoPlayer('Position', [20, 400, 700, 400]);
+        
 
  end
 %%
@@ -117,7 +138,7 @@ end
         end
 
         % Solve the assignment problem.
-        costOfNonAssignment = 20;
+        costOfNonAssignment = 50;
         [assignments, unassignedTracks, unassignedDetections] = ...
             assignDetectionsToTracks(cost, costOfNonAssignment);
  end
@@ -243,12 +264,14 @@ function displayTrackingResults()
                 labels = strcat(labels, isPredicted);
 
                 % Draw the objects on the frame.
-                frame = insertObjectAnnotation(frame, 'rectangle', ...
-                    bboxes, labels);
+                frame = insertObjectAnnotation(frame, 'circle', ...
+                    [bboxes(:, 1)-bboxes(:, 3)/2 bboxes(:, 2)-bboxes(:, 4)/2 ...
+                    10*ones(size(bboxes, 1), 1)], labels);
 
                 % Draw the objects on the mask.
-                mask = insertObjectAnnotation(mask, 'rectangle', ...
-                    bboxes, labels);
+                mask = insertObjectAnnotation(mask, 'circle', ...
+                    [bboxes(:, 1)-bboxes(:, 3)/2 bboxes(:, 2)-bboxes(:, 4)/2 ...
+                    10*ones(size(bboxes, 1), 1)], labels);
             end
         end
 
