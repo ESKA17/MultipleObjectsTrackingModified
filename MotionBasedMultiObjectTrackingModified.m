@@ -21,18 +21,30 @@ out = edge(I, 'Roberts');
 P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
 lines = houghlines(BW, T, R, P, 'FillGap', 5, 'MinLength', 7);
 out = uint8(repmat(out, 1, 1, 3)) .* 255;
-f = figure();
-width = 1920;
-height = 1080;
-set(gca, 'Units','pixels', 'Visible', 'off')
-set(f,'Position',[0 0 width height])
-set(f,'Renderer', 'ZBuffer')
-imshow(out), hold on
-truesize;
+img = out;
+hFig = figure('Name','APP',...
+    'Numbertitle','off', 'Units', 'normalized',...
+    'Position', [0 0 1 1], 'MenuBar', 'none', 'Toolbar', 'none', ...
+    'WindowStyle', 'modal', 'WindowState', 'fullscreen',...
+    'Color',[0.5 0.5 0.5], 'OuterPosition', [0 0 1 1], ...
+    'InnerPosition', [0 0 1 1]);
+fpos = get(hFig,'Position');
+axOffset = (fpos(3:4)-[size(img,2) size(img,1)])/2;
+% f = figure('Visible','off', 'Units','normalized',  'MenuBar', 'None',...
+%     'ToolBar', 'None',...
+%     'WindowState', 'fullscreen', 'OuterPosition',[0 0 1 1], ...
+%     'Papersize', [1 1]);
+% set(f,'Renderer', 'ZBuffer')
+% set(gca, 'Visible', 'off')
+ha = axes('Parent', hFig, 'Units','normalized',...
+            'Position', [0 0 1 1], 'OuterPosition', [0 0 1 1]);
+myImg = imshow(out,'Parent',ha);
+hold on
+
     for k = 1:length(lines)
         xy = [lines(k).point1; lines(k).point2];
         plot(xy(:,1), xy(:,2), 'LineWidth', 2, 'Color','green');
-        set(gca, 'Visible', 'off')
+%         set(gca, 'Visible', 'off')
    
 
 %         xspace = xy(1, 1):xy(2, 1);
@@ -138,7 +150,7 @@ end
         end
 
         % Solve the assignment problem.
-        costOfNonAssignment = 50;
+        costOfNonAssignment = 20;
         [assignments, unassignedTracks, unassignedDetections] = ...
             assignDetectionsToTracks(cost, costOfNonAssignment);
  end
@@ -184,7 +196,7 @@ function deleteLostTracks()
         end
 
         invisibleForTooLong = 20;
-        ageThreshold = 8;
+        ageThreshold = 10;
 
         % Compute the fraction of the track's age for which it was visible.
         ages = [tracks(:).age];
