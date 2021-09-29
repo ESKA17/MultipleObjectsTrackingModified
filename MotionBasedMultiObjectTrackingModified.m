@@ -21,59 +21,44 @@ out = edge(I, 'Roberts');
 P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
 lines = houghlines(BW, T, R, P, 'FillGap', 5, 'MinLength', 7);
 out = uint8(repmat(out, 1, 1, 3)) .* 255;
-img = out;
-hFig = figure('Name','APP',...
-    'Numbertitle','off', 'Units', 'normalized',...
-    'Position', [0 0 1 1], 'MenuBar', 'none', 'Toolbar', 'none', ...
-    'WindowStyle', 'modal', 'WindowState', 'fullscreen',...
-    'Color',[0.5 0.5 0.5], 'OuterPosition', [0 0 1 1], ...
-    'InnerPosition', [0 0 1 1]);
-fpos = get(hFig,'Position');
-axOffset = (fpos(3:4)-[size(img,2) size(img,1)])/2;
-% f = figure('Visible','off', 'Units','normalized',  'MenuBar', 'None',...
-%     'ToolBar', 'None',...
-%     'WindowState', 'fullscreen', 'OuterPosition',[0 0 1 1], ...
-%     'Papersize', [1 1]);
-% set(f,'Renderer', 'ZBuffer')
-% set(gca, 'Visible', 'off')
-ha = axes('Parent', hFig, 'Units','normalized',...
-            'Position', [0 0 1 1], 'OuterPosition', [0 0 1 1]);
-myImg = imshow(out,'Parent',ha);
-hold on
+
+% hFig = figure('Name','APP',...
+%     'Numbertitle','off', 'Units', 'normalized',...
+%     'Position', [0 0 1 1], 'MenuBar', 'none', 'Toolbar', 'none', ...
+%     'WindowStyle', 'modal', 'WindowState', 'fullscreen',...
+%     'Color',[0.5 0.5 0.5], 'OuterPosition', [0 0 1 1], ...
+%     'InnerPosition', [0 0 1 1]);
+% fpos = get(hFig,'Position');
+% axOffset = (fpos(3:4)-[size(out,2) size(out,1)])/2;
+% ha = axes('Parent', hFig, 'Units','normalized',...
+%             'Position', [0 0 1 1], 'OuterPosition', [0 0 1 1]);
+% myImg = imshow(out,'Parent',ha);
+% hold on
 
     for k = 1:length(lines)
         xy = [lines(k).point1; lines(k).point2];
-        plot(xy(:,1), xy(:,2), 'LineWidth', 2, 'Color','green');
-%         set(gca, 'Visible', 'off')
-   
+%         plot(xy(:,1), xy(:,2), 'LineWidth', 2, 'Color','green');
 
-%         xspace = xy(1, 1):xy(2, 1);
-%         yspace = fix(xy(1, 2) + xspace*(xy(2,2)-xy(1, 2))/(xy(2, 1)-xy(1, 1)));
-%         if sum(yspace < 0) > 0
-%             yspace = yspace(yspace > 0);
-%             xspace = xspace(1:length(yspace));
-%         end
-%          for i = 1:length(xspace)
-%             out(yspace(i), xspace(i),1) = 0;
-%             out(yspace(i), xspace(i),3) = 0;
-%         end
-         if xy(1, 2) <= xy(2, 2)
-        centroids(k, :) = [xy(1, 1) + (xy(2, 1) - xy(1, 1))/2, ...
-            xy(1, 2) + (xy(2, 2) - xy(1, 2))/2];
-        bboxes(k, :) = [xy(1, 1) xy(2, 2) (xy(2, 1) - xy(1, 1))...
-            xy(2, 2) - xy(1, 2)];
-        else 
-        centroids(k, :) = [xy(1, 1) + (xy(2, 1) - xy(1, 1))/2, ...
-            xy(2, 2) + (xy(1, 2) - xy(2, 2))/2];
-        bboxes(k, :) = [xy(1, 1) xy(1, 2) (xy(2, 1) - xy(1, 1))...
-            xy(1, 2) - xy(2, 2)];
+        xspace = xy(1, 1):xy(2, 1);
+        coef = [xy(1, 1), 1; xy(2, 1), 1]\[xy(1, 2); xy(2, 2)];
+        yspace = round(xspace*coef(1)+coef(2));
+  
+         for i = 1:length(xspace)
+            out(yspace(i), xspace(i),1) = 0;
+            out(yspace(i), xspace(i),3) = 0;
         end
+        bboxes(k, :) = [xy(1, 1) max([xy(1, 2) xy(2, 2)])...
+            (xy(2, 1) - xy(1, 1)) abs(xy(2, 2) - xy(1, 2))];
+
+        centroids(k, :) = [xy(1, 1) + (xy(2, 1) - xy(1, 1))/2, ...
+            min([xy(1, 2) xy(2, 2)]) + abs(xy(2, 2) - xy(1, 2))/2];
+        
     end
-%     frame = out;
-        hold off
-        frame = getframe(gcf).cdata;
-        clf 
-        close
+    frame = out;
+%         hold off
+%         frame = getframe(gcf).cdata;
+%         clf 
+%         close
     Isub = imsubtract(frame(:,:,2), rgb2gray(frame));
     mask = imbinarize(Isub);
 %     stats = regionprops(mask, 'Centroid', 'BoundingBox');
@@ -94,12 +79,14 @@ hold on
     writeVideo(video, frame);
 end
 close(video);
-
+%%
+function frskplot
+figure(1)
+imshowpair(frame, mask, 'montage')
+end
 %%
  function obj = setupSystemObjects()
         % Initialize Video I/O
-        % Create objects for reading a video from a file, drawing the tracked
-        % objects in each frame, and playing the video.
 
         % Create a video reader.
         obj.reader = VideoReader('example1.mp4');
