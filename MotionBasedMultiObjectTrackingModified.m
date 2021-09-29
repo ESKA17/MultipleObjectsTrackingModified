@@ -13,88 +13,105 @@ video.FrameRate = obj.reader.FrameRate;
 % Detect moving objects, and track them across video frames.
 open(video);
 while hasFrame(obj.reader)
-frame = readFrame(obj.reader);
-I = rgb2gray(frame);
-BW = imbinarize(I);
-out = edge(I, 'Roberts');
-[H,T,R] = hough(out);
-P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
-lines = houghlines(BW, T, R, P, 'FillGap', 5, 'MinLength', 7);
-out = uint8(repmat(out, 1, 1, 3)) .* 255;
-
-% hFig = figure('Name','APP',...
-%     'Numbertitle','off', 'Units', 'normalized',...
-%     'Position', [0 0 1 1], 'MenuBar', 'none', 'Toolbar', 'none', ...
-%     'WindowStyle', 'modal', 'WindowState', 'fullscreen',...
-%     'Color',[0.5 0.5 0.5], 'OuterPosition', [0 0 1 1], ...
-%     'InnerPosition', [0 0 1 1]);
-% fpos = get(hFig,'Position');
-% axOffset = (fpos(3:4)-[size(out,2) size(out,1)])/2;
-% ha = axes('Parent', hFig, 'Units','normalized',...
-%             'Position', [0 0 1 1], 'OuterPosition', [0 0 1 1]);
-% myImg = imshow(out,'Parent',ha);
-% hold on
-
-    for k = 1:length(lines)
+    frame = readFrame(obj.reader);
+    I = rgb2gray(frame);
+    BW = imbinarize(I);
+    out = edge(I, 'Roberts');
+    [H,T,R] = hough(out);
+    P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
+    lines = houghlines(BW, T, R, P, 'FillGap', 5, 'MinLength', 7);
+    out = uint8(repmat(out, 1, 1, 3)) .* 255;
+    
+    numLin = length(lines);
+    coef = ones(numLin, 2);
+    missInd = [];
+    xspace = cell(numLin, 1);
+    yspace = cell(numLin, 1);
+    indArray = 1:numLin;
+    for k = indArray
         xy = [lines(k).point1; lines(k).point2];
-%         plot(xy(:,1), xy(:,2), 'LineWidth', 2, 'Color','green');
-
-        xspace = xy(1, 1):xy(2, 1);
-        coef = [xy(1, 1), 1; xy(2, 1), 1]\[xy(1, 2); xy(2, 2)];
-        yspace = round(xspace*coef(1)+coef(2));
-  
-         for i = 1:length(xspace)
-            out(yspace(i), xspace(i),1) = 0;
-            out(yspace(i), xspace(i),3) = 0;
+        coef(k, :) = [xy(1, 1), 1; xy(2, 1), 1]\[xy(1, 2); xy(2, 2)];
+        xspace{k} = xy(1, 1):xy(2, 1);
+        yspace{k} = round(xspace{k}*coef(k, 1)+coef(k, 2));       
+        bboxes(k, :) = round([xy(1, 1) max([xy(1, 2) xy(2, 2)])...
+            (xy(2, 1) - xy(1, 1)) abs(xy(2, 2) - xy(1, 2))]);
+        centroids(k, :) = round([xy(1, 1) + (xy(2, 1) - xy(1, 1))/2, ...
+            min([xy(1, 2) xy(2, 2)]) + abs(xy(2, 2) - xy(1, 2))/2]);
+        tmpArea = bboxes(k, 3)*bboxes(k, 4);
+        if tmpArea < 100
+            missInd = [missInd, k];
+        else
+            bbArea(k) = bboxes(k, 3)*bboxes(k, 4);
         end
-        bboxes(k, :) = [xy(1, 1) max([xy(1, 2) xy(2, 2)])...
-            (xy(2, 1) - xy(1, 1)) abs(xy(2, 2) - xy(1, 2))];
-
-        centroids(k, :) = [xy(1, 1) + (xy(2, 1) - xy(1, 1))/2, ...
-            min([xy(1, 2) xy(2, 2)]) + abs(xy(2, 2) - xy(1, 2))/2];
-        
     end
+    newInd = setdiff(indArray, missInd);
+    newxspc = xspace(newInd);
+    newyspc = yspace(newInd);
+    newlines = lines(1,newInd);
+    
+%     findEqMat = [lines.theta; lines.rho]';
+%     [u, I, J] = unique(findEqMat, 'rows', 'first');
+%     hasDuplicates = size(u, 1) < size(findEqMat, 1);
+%     
+%     if hasDuplicates
+%         ixDupRows = setdiff(1:size(findEqMat,1), I);
+%         dupRowValues = findEqMat(ixDupRows, :);
+%         myInd = cell(1, size(dupRowValues, 1));
+%         for i = 1:size(dupRowValues, 1)
+%             [tmp ~] = find(findEqMat == dupRowValues(i,:));
+%             myInd{1, i} = unique(tmp');
+%         end
+%     end
+        
+    bboxes = bboxes(newInd, :);
+    centroids = centroids(newInd, :);
+
+    for i = length(newxspc)
+        tmpxspc = newxspc{i};
+        tmpyspc = newyspc{i};
+        for j = 1:length(tmpxspc)
+            out(tmpyspc(j), tmpxspc(j), 1) = 0;
+            out(tmpyspc(j), tmpxspc(j), 3) = 0;
+        end
+    end
+       
+    
+%     coef(:, 1) = round(coef(:, 1), 2);
+%     coef(:, 2) = round(coef(:, 2));
+       
     frame = out;
-%         hold off
-%         frame = getframe(gcf).cdata;
-%         clf 
-%         close
     Isub = imsubtract(frame(:,:,2), rgb2gray(frame));
     mask = imbinarize(Isub);
-%     stats = regionprops(mask, 'Centroid', 'BoundingBox');
-%     centroids = cat(1, stats.Centroid);
-%     bboxes = cat(1, stats.BoundingBox);
-
-
+    
     predictNewLocationsOfTracks();
     [assignments, unassignedTracks, unassignedDetections] = ...
         detectionToTrackAssignment();
-
+    
     updateAssignedTracks();
     updateUnassignedTracks();
     deleteLostTracks();
     createNewTracks();
-
+    
     displayTrackingResults();
     writeVideo(video, frame);
 end
 close(video);
 %%
 function frskplot
-figure(1)
-imshowpair(frame, mask, 'montage')
+    figure(1)
+    imshowpair(frame, mask, 'montage')
 end
 %%
  function obj = setupSystemObjects()
-        % Initialize Video I/O
-
-        % Create a video reader.
-        obj.reader = VideoReader('example1.mp4');
-
-        % Create two video players, one to display the video,
-        % and one to display the foreground mask.
-        obj.maskPlayer = vision.VideoPlayer('Position', [740, 400, 700, 400]);
-        obj.videoPlayer = vision.VideoPlayer('Position', [20, 400, 700, 400]);
+     % Initialize Video I/O
+     
+     % Create a video reader.
+     obj.reader = VideoReader('example1.mp4');
+     
+     % Create two video players, one to display the video,
+     % and one to display the foreground mask.
+     obj.maskPlayer = vision.VideoPlayer('Position', [740, 400, 700, 400]);
+     obj.videoPlayer = vision.VideoPlayer('Position', [20, 400, 700, 400]);
         
 
  end
@@ -229,54 +246,54 @@ function createNewTracks()
 end
 %%
 function displayTrackingResults()
-        % Convert the frame and the mask to uint8 RGB.
-        frame = im2uint8(frame);
-        mask = uint8(repmat(mask, [1, 1, 3])) .* 255;
-
-        minVisibleCount = 5;
-        if ~isempty(tracks)
-
-            % Noisy detections tend to result in short-lived tracks.
-            % Only display tracks that have been visible for more than
-            % a minimum number of frames.
-            reliableTrackInds = ...
-                [tracks(:).totalVisibleCount] > minVisibleCount;
-            reliableTracks = tracks(reliableTrackInds);
-
-            % Display the objects. If an object has not been detected
-            % in this frame, display its predicted bounding box.
-            if ~isempty(reliableTracks)
-                % Get bounding boxes.
-                bboxes = cat(1, reliableTracks.bbox);
-
-                % Get ids.
-                ids = int32([reliableTracks(:).id]);
-
-                % Create labels for objects indicating the ones for
-                % which we display the predicted rather than the actual
-                % location.
-                labels = cellstr(int2str(ids'));
-                predictedTrackInds = ...
-                    [reliableTracks(:).consecutiveInvisibleCount] > 0;
-                isPredicted = cell(size(labels));
-                isPredicted(predictedTrackInds) = {' predicted'};
-                labels = strcat(labels, isPredicted);
-
-                % Draw the objects on the frame.
-                frame = insertObjectAnnotation(frame, 'circle', ...
-                    [bboxes(:, 1)-bboxes(:, 3)/2 bboxes(:, 2)-bboxes(:, 4)/2 ...
-                    10*ones(size(bboxes, 1), 1)], labels);
-
-                % Draw the objects on the mask.
-                mask = insertObjectAnnotation(mask, 'circle', ...
-                    [bboxes(:, 1)-bboxes(:, 3)/2 bboxes(:, 2)-bboxes(:, 4)/2 ...
-                    10*ones(size(bboxes, 1), 1)], labels);
-            end
+    % Convert the frame and the mask to uint8 RGB.
+    frame = im2uint8(frame);
+    mask = uint8(repmat(mask, [1, 1, 3])) .* 255;
+    
+    minVisibleCount = 5;
+    if ~isempty(tracks)
+        
+        % Noisy detections tend to result in short-lived tracks.
+        % Only display tracks that have been visible for more than
+        % a minimum number of frames.
+        reliableTrackInds = ...
+            [tracks(:).totalVisibleCount] > minVisibleCount;
+        reliableTracks = tracks(reliableTrackInds);
+        
+        % Display the objects. If an object has not been detected
+        % in this frame, display its predicted bounding box.
+        if ~isempty(reliableTracks)
+            % Get bounding boxes.
+            bboxes = cat(1, reliableTracks.bbox);
+            
+            % Get ids.
+            ids = int32([reliableTracks(:).id]);
+            
+            % Create labels for objects indicating the ones for
+            % which we display the predicted rather than the actual
+            % location.
+            labels = cellstr(int2str(ids'));
+            predictedTrackInds = ...
+                [reliableTracks(:).consecutiveInvisibleCount] > 0;
+            isPredicted = cell(size(labels));
+            isPredicted(predictedTrackInds) = {' predicted'};
+            labels = strcat(labels, isPredicted);
+            
+            % Draw the objects on the frame.
+            frame = insertObjectAnnotation(frame, 'circle', ...
+                [bboxes(:, 1)+bboxes(:, 3)/2 bboxes(:, 2)+bboxes(:, 4)/2 ...
+                10*ones(size(bboxes, 1), 1)], labels);
+            
+            % Draw the objects on the mask.
+            mask = insertObjectAnnotation(mask, 'circle', ...
+                [bboxes(:, 1)+bboxes(:, 3)/2 bboxes(:, 2)+bboxes(:, 4)/2 ...
+                10*ones(size(bboxes, 1), 1)], labels);
         end
-
-        % Display the mask and the frame.
-        obj.maskPlayer.step(mask);
-        obj.videoPlayer.step(frame);
+    end
+    
+    % Display the mask and the frame.
+    obj.maskPlayer.step(mask);
+    obj.videoPlayer.step(frame);
 end
 
 end
