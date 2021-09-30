@@ -7,7 +7,7 @@ tracks = initializeTracks(); % Create an empty array of tracks.
 
 nextId = 1; % ID of the next track
 
-video = VideoWriter('myvideo2.avi');
+video = VideoWriter('myvideo5.avi');
 video.FrameRate = obj.reader.FrameRate;
 
 % Detect moving objects, and track them across video frames.
@@ -15,12 +15,20 @@ open(video);
 while hasFrame(obj.reader)
     
     frame = readFrame(obj.reader);
-    I = rgb2gray(frame);
-    BW = imbinarize(I);
-    out = edge(I, 'Roberts');
-    [H,T,R] = hough(out);
-    P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
-    lines = houghlines(BW, T, R, P, 'FillGap', 5, 'MinLength', 7);
+
+    Img = rgb2gray(frame);
+    Img = medfilt2(Img);
+    Img = imdiffusefilt(Img);
+% Img = imguidedfilter(Img);
+    Img = imclose(Img, 50);
+    BW2 = imbinarize(Img, 0.2);
+%     BW2 = bwareaopen(BW2, 5);
+
+    out = edge(Img, 'Roberts');
+%     out = bwareaopen(out, 5);
+    [H,T,R] = hough(out, 'RhoResolution', 0.1);
+    P  = houghpeaks(H, 1, 'threshold', ceil(0.3*max(H(:))));
+    lines = houghlines(BW2, T, R, P, 'FillGap', 5, 'MinLength', 7);
     out = uint8(repmat(out, 1, 1, 3)) .* 255;
     % Filtering low area bounding boxes
     numLin = length(lines);
@@ -32,7 +40,7 @@ while hasFrame(obj.reader)
         bbtmp(k, :) = round([xy(1, 1) max([xy(1, 2) xy(2, 2)])...
             (xy(2, 1) - xy(1, 1)) abs(xy(2, 2) - xy(1, 2))]);
         tmpArea = bbtmp(k, 3)*bbtmp(k, 4);
-        if tmpArea < 25 && lines(k).point2(1) - lines(k).point1(1) < 50
+        if tmpArea < 50 && lines(k).point2(1) - lines(k).point1(1) < 25
             missInd(end + 1) = k;
         end
     end
@@ -68,6 +76,8 @@ while hasFrame(obj.reader)
             UnqLines(end + 1) = newlines(sameInd{j}(index2));
             
         end
+    else
+        UnqLines = newlines;
     end
     numUnqLines = length(UnqLines);
     xspace = cell(numUnqLines, 1);
@@ -117,7 +127,7 @@ close(video);
      % Initialize Video I/O
      
      % Create a video reader.
-     obj.reader = VideoReader('example1.mp4');
+     obj.reader = VideoReader('newexample3.MOV');
      
      % Create two video players, one to display the video,
      % and one to display the foreground mask.
@@ -210,7 +220,7 @@ function deleteLostTracks()
             return;
         end
 
-        invisibleForTooLong = 20;
+        invisibleForTooLong = 50;
         ageThreshold = 10;
 
         % Compute the fraction of the track's age for which it was visible.
@@ -237,7 +247,7 @@ function createNewTracks()
 
             % Create a Kalman filter object.
             kalmanFilter = configureKalmanFilter('ConstantAcceleration', ...
-                centroid, [25, 10, 10], [25, 10, 10], 10);
+                centroid, [1 1 1], [25, 10, 10], 25);
 
             % Create a new track.
             newTrack = struct(...
@@ -261,7 +271,7 @@ function displayTrackingResults()
     frame = im2uint8(frame);
     mask = uint8(repmat(mask, [1, 1, 3])) .* 255;
     
-    minVisibleCount = 5;
+    minVisibleCount = 10;
     if ~isempty(tracks)
         
         % Noisy detections tend to result in short-lived tracks.
