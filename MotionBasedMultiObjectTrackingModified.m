@@ -33,7 +33,7 @@ while hasFrame(obj.reader)
             (xy(2, 1) - xy(1, 1)) abs(xy(2, 2) - xy(1, 2))]);
         tmpArea = bbtmp(k, 3)*bbtmp(k, 4);
         if tmpArea < 25 && lines(k).point2(1) - lines(k).point1(1) < 50
-            missInd = [missInd, k];
+            missInd(end + 1) = k;
         end
     end
     newInd = setdiff(indArray, missInd);
@@ -55,16 +55,17 @@ while hasFrame(obj.reader)
             UnqLines = newlines(1, uniqInd);
             
         for j=1:length(sameInd)
-            store1 = []; store2 = [];
-            for k = sameInd{j}
-                store1 = [store1 newlines(k).point1(1)];
-                store2 = [store2 newlines(k).point2(1)];
+            store1 = ones(1, length(sameInd{j})); 
+            store2 = ones(1, length(sameInd{j}));
+            for k = 1:length(sameInd{j})
+                store1(k) = newlines(sameInd{j}(k)).point1(1);
+                store2(k) = newlines(sameInd{j}(k)).point2(1);
             end
             [~, index1] = min(store1);
             [~, index2] = max(store2);
             newlines(sameInd{j}(index2)).point1 = ...
                 newlines(sameInd{j}(index1)).point1;
-            UnqLines = [UnqLines newlines(sameInd{j}(index2))];
+            UnqLines(end + 1) = newlines(sameInd{j}(index2));
             
         end
     end
@@ -111,12 +112,6 @@ while hasFrame(obj.reader)
     writeVideo(video, frame);
 end
 close(video);
-%%
-% For error checking
-function frskplot
-    figure(1)
-    imshowpair(frame, mask, 'montage')
-end
 %%
  function obj = setupSystemObjects()
      % Initialize Video I/O
@@ -242,7 +237,7 @@ function createNewTracks()
 
             % Create a Kalman filter object.
             kalmanFilter = configureKalmanFilter('ConstantAcceleration', ...
-                centroid, [50, 25, 25], [50, 25, 25], 25);
+                centroid, [25, 10, 10], [25, 10, 10], 10);
 
             % Create a new track.
             newTrack = struct(...
