@@ -13,6 +13,7 @@ video.FrameRate = obj.reader.FrameRate;
 % Detect moving objects, and track them across video frames.
 open(video);
 while hasFrame(obj.reader)
+    
     frame = readFrame(obj.reader);
     I = rgb2gray(frame);
     BW = imbinarize(I);
@@ -21,63 +22,77 @@ while hasFrame(obj.reader)
     P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
     lines = houghlines(BW, T, R, P, 'FillGap', 5, 'MinLength', 7);
     out = uint8(repmat(out, 1, 1, 3)) .* 255;
-    
+    % Filtering low area bounding boxes
     numLin = length(lines);
-    coef = ones(numLin, 2);
     missInd = [];
-    xspace = cell(numLin, 1);
-    yspace = cell(numLin, 1);
     indArray = 1:numLin;
+    bbtmp = ones(numLin, 4);
     for k = indArray
-        xy = [lines(k).point1; lines(k).point2];
-        coef(k, :) = [xy(1, 1), 1; xy(2, 1), 1]\[xy(1, 2); xy(2, 2)];
-        xspace{k} = xy(1, 1):xy(2, 1);
-        yspace{k} = round(xspace{k}*coef(k, 1)+coef(k, 2));       
-        bboxes(k, :) = round([xy(1, 1) max([xy(1, 2) xy(2, 2)])...
+        xy = [lines(k).point1; lines(k).point2];      
+        bbtmp(k, :) = round([xy(1, 1) max([xy(1, 2) xy(2, 2)])...
             (xy(2, 1) - xy(1, 1)) abs(xy(2, 2) - xy(1, 2))]);
-        centroids(k, :) = round([xy(1, 1) + (xy(2, 1) - xy(1, 1))/2, ...
-            min([xy(1, 2) xy(2, 2)]) + abs(xy(2, 2) - xy(1, 2))/2]);
-        tmpArea = bboxes(k, 3)*bboxes(k, 4);
-        if tmpArea < 100
+        tmpArea = bbtmp(k, 3)*bbtmp(k, 4);
+        if tmpArea < 25 && lines(k).point2(1) - lines(k).point1(1) < 50
             missInd = [missInd, k];
-        else
-            bbArea(k) = bboxes(k, 3)*bboxes(k, 4);
         end
     end
     newInd = setdiff(indArray, missInd);
-    newxspc = xspace(newInd);
-    newyspc = yspace(newInd);
     newlines = lines(1,newInd);
     
-%     findEqMat = [lines.theta; lines.rho]';
-%     [u, I, J] = unique(findEqMat, 'rows', 'first');
-%     hasDuplicates = size(u, 1) < size(findEqMat, 1);
-%     
-%     if hasDuplicates
-%         ixDupRows = setdiff(1:size(findEqMat,1), I);
-%         dupRowValues = findEqMat(ixDupRows, :);
-%         myInd = cell(1, size(dupRowValues, 1));
-%         for i = 1:size(dupRowValues, 1)
-%             [tmp ~] = find(findEqMat == dupRowValues(i,:));
-%             myInd{1, i} = unique(tmp');
-%         end
-%     end
-        
-    bboxes = bboxes(newInd, :);
-    centroids = centroids(newInd, :);
+    % Checking for points on the same line
+   findEqMat = [newlines.theta; newlines.rho]';
+    [u, I, ~] = unique(findEqMat, 'rows', 'first');
+    hasDuplicates = size(u, 1) < size(findEqMat, 1);
+    if hasDuplicates
+        ixDupRows = setdiff(1:size(findEqMat,1), I);
+        dupRowValues = unique(findEqMat(ixDupRows, :), 'rows');
+        sameInd = cell(1, size(dupRowValues, 1));
+        for kk = 1:size(dupRowValues, 1)
+            [tmp, ~] = find(findEqMat == dupRowValues(kk,:));
+            sameInd{1, kk} = unique(tmp');
+        end
+            uniqInd = setdiff(1:length(newlines), unique(cell2mat(sameInd)));
+            UnqLines = newlines(1, uniqInd);
+            
+        for j=1:length(sameInd)
+            store1 = []; store2 = [];
+            for k = sameInd{j}
+                store1 = [store1 newlines(k).point1(1)];
+                store2 = [store2 newlines(k).point2(1)];
+            end
+            [~, index1] = min(store1);
+            [~, index2] = max(store2);
+            newlines(sameInd{j}(index2)).point1 = ...
+                newlines(sameInd{j}(index1)).point1;
+            UnqLines = [UnqLines newlines(sameInd{j}(index2))];
+            
+        end
+    end
+    numUnqLines = length(UnqLines);
+    xspace = cell(numUnqLines, 1);
+    yspace = cell(numUnqLines, 1);
+    coef = ones(numUnqLines, 2);
+    bboxes = ones(numUnqLines, 4);
+    centroids = ones(numUnqLines, 2);
+    for m = 1:numUnqLines
+        xy = [UnqLines(m).point1; UnqLines(m).point2];      
+        bboxes(m, :) = round([xy(1, 1) max([xy(1, 2) xy(2, 2)])...
+            (xy(2, 1) - xy(1, 1)) abs(xy(2, 2) - xy(1, 2))]);
+        centroids(m, :) = round([xy(1, 1) + (xy(2, 1) - xy(1, 1))/2, ...
+            min([xy(1, 2) xy(2, 2)]) + abs(xy(2, 2) - xy(1, 2))/2]);
+        coef(m, :) = [xy(1, 1), 1; xy(2, 1), 1]\[xy(1, 2); xy(2, 2)];
+        xspace{m} = xy(1, 1):xy(2, 1);
+        yspace{m} = round(xspace{m}*coef(m, 1)+coef(m, 2));
+    end
 
-    for i = length(newxspc)
-        tmpxspc = newxspc{i};
-        tmpyspc = newyspc{i};
+    for mm = 1:length(xspace)
+        tmpxspc = xspace{mm};
+        tmpyspc = yspace{mm};
         for j = 1:length(tmpxspc)
             out(tmpyspc(j), tmpxspc(j), 1) = 0;
             out(tmpyspc(j), tmpxspc(j), 3) = 0;
         end
     end
-       
-    
-%     coef(:, 1) = round(coef(:, 1), 2);
-%     coef(:, 2) = round(coef(:, 2));
        
     frame = out;
     Isub = imsubtract(frame(:,:,2), rgb2gray(frame));
@@ -97,6 +112,7 @@ while hasFrame(obj.reader)
 end
 close(video);
 %%
+% For error checking
 function frskplot
     figure(1)
     imshowpair(frame, mask, 'montage')
@@ -225,8 +241,8 @@ function createNewTracks()
             bbox = bboxes(i, :);
 
             % Create a Kalman filter object.
-            kalmanFilter = configureKalmanFilter('ConstantVelocity', ...
-                centroid, [200, 50], [100, 25], 25);
+            kalmanFilter = configureKalmanFilter('ConstantAcceleration', ...
+                centroid, [50, 25, 25], [50, 25, 25], 25);
 
             % Create a new track.
             newTrack = struct(...
@@ -281,12 +297,12 @@ function displayTrackingResults()
             
             % Draw the objects on the frame.
             frame = insertObjectAnnotation(frame, 'circle', ...
-                [bboxes(:, 1)+bboxes(:, 3)/2 bboxes(:, 2)+bboxes(:, 4)/2 ...
+                [bboxes(:, 1)+bboxes(:, 3)/2 bboxes(:, 2)-bboxes(:, 4)/2 ...
                 10*ones(size(bboxes, 1), 1)], labels);
             
             % Draw the objects on the mask.
             mask = insertObjectAnnotation(mask, 'circle', ...
-                [bboxes(:, 1)+bboxes(:, 3)/2 bboxes(:, 2)+bboxes(:, 4)/2 ...
+                [bboxes(:, 1)+bboxes(:, 3)/2 bboxes(:, 2)-bboxes(:, 4)/2 ...
                 10*ones(size(bboxes, 1), 1)], labels);
         end
     end
