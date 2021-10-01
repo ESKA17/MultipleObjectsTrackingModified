@@ -7,11 +7,12 @@ tracks = initializeTracks(); % Create an empty array of tracks.
 
 nextId = 1; % ID of the next track
 
-video = VideoWriter('myvideo5.avi');
+video = VideoWriter('myvideo4.avi');
 video.FrameRate = obj.reader.FrameRate;
 
 % Detect moving objects, and track them across video frames.
 open(video);
+indix = 1
 while hasFrame(obj.reader)
     
     frame = readFrame(obj.reader);
@@ -27,8 +28,8 @@ while hasFrame(obj.reader)
     out = edge(Img, 'Roberts');
 %     out = bwareaopen(out, 5);
     [H,T,R] = hough(out, 'RhoResolution', 0.1);
-    P  = houghpeaks(H, 1, 'threshold', ceil(0.3*max(H(:))));
-    lines = houghlines(BW2, T, R, P, 'FillGap', 5, 'MinLength', 7);
+    P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
+    lines = houghlines(out, T, R, P, 'FillGap', 5, 'MinLength', 7);
     out = uint8(repmat(out, 1, 1, 3)) .* 255;
     % Filtering low area bounding boxes
     numLin = length(lines);
@@ -39,9 +40,11 @@ while hasFrame(obj.reader)
         xy = [lines(k).point1; lines(k).point2];      
         bbtmp(k, :) = round([xy(1, 1) max([xy(1, 2) xy(2, 2)])...
             (xy(2, 1) - xy(1, 1)) abs(xy(2, 2) - xy(1, 2))]);
-        tmpArea = bbtmp(k, 3)*bbtmp(k, 4);
-        if tmpArea < 50 && lines(k).point2(1) - lines(k).point1(1) < 25
+        tmpSum = bbtmp(k, 3)+bbtmp(k, 4);
+        if tmpSum < 5 
             missInd(end + 1) = k;
+        else
+            missInd = [];
         end
     end
     newInd = setdiff(indArray, missInd);
@@ -92,8 +95,13 @@ while hasFrame(obj.reader)
         centroids(m, :) = round([xy(1, 1) + (xy(2, 1) - xy(1, 1))/2, ...
             min([xy(1, 2) xy(2, 2)]) + abs(xy(2, 2) - xy(1, 2))/2]);
         coef(m, :) = [xy(1, 1), 1; xy(2, 1), 1]\[xy(1, 2); xy(2, 2)];
+        if sum(coef == inf) > 0
+            yspace(m) = 
+            xspace = repmat()
+        else
         xspace{m} = xy(1, 1):xy(2, 1);
         yspace{m} = round(xspace{m}*coef(m, 1)+coef(m, 2));
+        end
     end
 
     for mm = 1:length(xspace)
@@ -120,6 +128,7 @@ while hasFrame(obj.reader)
     
     displayTrackingResults();
     writeVideo(video, frame);
+    indix = indix +1
 end
 close(video);
 %%
@@ -127,7 +136,7 @@ close(video);
      % Initialize Video I/O
      
      % Create a video reader.
-     obj.reader = VideoReader('newexample3.MOV');
+     obj.reader = VideoReader('newexample2.mp4');
      
      % Create two video players, one to display the video,
      % and one to display the foreground mask.
@@ -316,5 +325,4 @@ function displayTrackingResults()
     obj.maskPlayer.step(mask);
     obj.videoPlayer.step(frame);
 end
-
 end
