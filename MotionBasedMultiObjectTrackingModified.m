@@ -1,20 +1,25 @@
-% coefstr = MotionBasedMultiObjectTrackingModified('newexample3.MOV','myvideo4.mp4');
-function MotionBasedMultiObjectTrackingModified()
+readfrom = 'example4.mp4';
+writeto = 'newvideo9.mp4';
+[unqlines, tracks] = MotionBasedMultiObject(readfrom, writeto);
+function [frame_lines, tracks] = MotionBasedMultiObject(read, write)
 % Create System objects used for reading video, detecting moving objects,
 % and displaying the results.
 obj = setupSystemObjects();
 tracks = initializeTracks(); % Create an empty array of tracks.
 nextId = 1; % ID of the next track
-video = VideoWriter('newvideo9.mp4', 'MPEG-4');
+video = VideoWriter(write, 'MPEG-4');
 video.FrameRate = obj.reader.FrameRate;
 numFrames = obj.reader.NumFrames;
 
 % Detect moving objects, and track them across video frames.
 open(video);
 frame_count = 1;
-while hasFrame(obj.reader)   
+frame_lines = struct('unqlines', {});
+while hasFrame(obj.reader)
+    
     frame = readFrame(obj.reader);
-    [out, bboxes, centroids, UnqLines, Img] = improc();
+    [out, bboxes, centroids, UnqLines] = improc();
+    frame_lines(end+1).unqlines = UnqLines;
     Isub = imsubtract(out(:,:,2), rgb2gray(out));
     mask = imbinarize(Isub); 
     predictNewLocationsOfTracks();
@@ -31,7 +36,7 @@ end
 close(video);
 
 %% Image processing
-function [out, bboxes, centroids, UnqLines, Img] = improc()
+function [out, bboxes, centroids, UnqLines] = improc()
     Img = rgb2gray(frame);
 %     Img = imadjust(Img, [0.3 0.6]);
 %     Img = imsharpen(Img, 'Amount',1.2);
@@ -47,11 +52,11 @@ function [out, bboxes, centroids, UnqLines, Img] = improc()
 %     out2 = edge(rgb2gray(frame), 'Sobel');
     
     % Finding straigth lines using Hough transform
-    [H,T,R] = hough(out, 'RhoResolution',1);
+    [H,T,R] = hough(out, 'RhoResolution', 1);
 %     P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
 %     lines = houghlines(BW, T, R, P, 'FillGap', 5, 'MinLength', 7);
-    P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
-    UnqLines = houghlines(out, T, R, P, 'FillGap', 10, 'MinLength', 20);
+    P  = houghpeaks(H, 3, 'threshold', ceil(0.1*max(H(:))));
+    newlines = houghlines(out, T, R, P, 'FillGap', 10, 'MinLength', 20);
     out = uint8(repmat(out, 1, 1, 3)) .* 255;
     
 %     % Filtering low area bounding boxes
@@ -73,37 +78,37 @@ function [out, bboxes, centroids, UnqLines, Img] = improc()
 %     UnqLines = UnqLines(1,newInd);
 
     
-%     % Checking for points on the same line
-%     findEqMat = [newlines.theta; newlines.rho]';
-%     [u, I, ~] = unique(findEqMat, 'rows', 'first');
-%     hasDuplicates = size(u, 1) < size(findEqMat, 1);
-%     if hasDuplicates
-%         ixDupRows = setdiff(1:size(findEqMat,1), I);
-%         dupRowValues = unique(findEqMat(ixDupRows, :), 'rows');
-%         sameInd = cell(1, size(dupRowValues, 1));
-%         for kk = 1:size(dupRowValues, 1)
-%             [tmp, ~] = find(findEqMat == dupRowValues(kk,:));
-%             sameInd{1, kk} = unique(tmp');
-%         end
-%             uniqInd = setdiff(1:length(newlines), ...
-%                 unique(cell2mat(sameInd)));
-%             UnqLines = newlines(1, uniqInd);         
-%         for j=1:length(sameInd)
-%             store1 = ones(1, length(sameInd{j})); 
-%             store2 = ones(1, length(sameInd{j}));
-%             for k = 1:length(sameInd{j})
-%                 store1(k) = newlines(sameInd{j}(k)).point1(1);
-%                 store2(k) = newlines(sameInd{j}(k)).point2(1);
-%             end
-%             [~, index1] = min(store1);
-%             [~, index2] = max(store2);
-%             newlines(sameInd{j}(index2)).point1 = ...
-%                 newlines(sameInd{j}(index1)).point1;
-%             UnqLines(end + 1) = newlines(sameInd{j}(index2));         
-%         end
-%     else
-%         UnqLines = newlines; % no repetion case
-%     end
+    % Checking for points on the same line
+    findEqMat = [newlines.theta; newlines.rho]';
+    [u, I, ~] = unique(findEqMat, 'rows', 'first');
+    hasDuplicates = size(u, 1) < size(findEqMat, 1);
+    if hasDuplicates
+        ixDupRows = setdiff(1:size(findEqMat,1), I);
+        dupRowValues = unique(findEqMat(ixDupRows, :), 'rows');
+        sameInd = cell(1, size(dupRowValues, 1));
+        for kk = 1:size(dupRowValues, 1)
+            [tmp, ~] = find(findEqMat == dupRowValues(kk,:));
+            sameInd{1, kk} = unique(tmp');
+        end
+            uniqInd = setdiff(1:length(newlines), ...
+                unique(cell2mat(sameInd)));
+            UnqLines = newlines(1, uniqInd);         
+        for j=1:length(sameInd)
+            store1 = ones(1, length(sameInd{j})); 
+            store2 = ones(1, length(sameInd{j}));
+            for k = 1:length(sameInd{j})
+                store1(k) = newlines(sameInd{j}(k)).point1(1);
+                store2(k) = newlines(sameInd{j}(k)).point2(1);
+            end
+            [~, index1] = min(store1);
+            [~, index2] = max(store2);
+            newlines(sameInd{j}(index2)).point1 = ...
+                newlines(sameInd{j}(index1)).point1;
+            UnqLines(end + 1) = newlines(sameInd{j}(index2));         
+        end
+    else
+        UnqLines = newlines; % no repetion case
+    end
     
     % Calculating bounding boxes, centroids and stright line coefficients
     numUnqLines = length(UnqLines);
@@ -123,7 +128,7 @@ end
 %% Initialize Video I/O 
  function obj = setupSystemObjects()
      % Create a video reader.
-     obj.reader = VideoReader('example4.mp4');
+     obj.reader = VideoReader(read);
      
      % Create two video players, one to display the video,
      % and one to display the foreground mask.
