@@ -1,5 +1,5 @@
-readfrom = 'example4.mp4';
-writeto = 'newvideo9.mp4';
+readfrom = 'example3.mp4';
+writeto = 'newvideo10.mp4';
 [unqlines, tracks] = MotionBasedMultiObject(readfrom, writeto);
 function [frame_lines, tracks] = MotionBasedMultiObject(read, write)
 % Create System objects used for reading video, detecting moving objects,
@@ -10,16 +10,15 @@ nextId = 1; % ID of the next track
 video = VideoWriter(write, 'MPEG-4');
 video.FrameRate = obj.reader.FrameRate;
 numFrames = obj.reader.NumFrames;
-
+frame_lines = repmat(struct,1,numFrames);
 % Detect moving objects, and track them across video frames.
 open(video);
 frame_count = 1;
-frame_lines = struct('unqlines', {});
 while hasFrame(obj.reader)
     
     frame = readFrame(obj.reader);
     [out, bboxes, centroids, UnqLines] = improc();
-    frame_lines(end+1).unqlines = UnqLines;
+    frame_lines(frame_count).unqlines = UnqLines;
     Isub = imsubtract(out(:,:,2), rgb2gray(out));
     mask = imbinarize(Isub); 
     predictNewLocationsOfTracks();
@@ -40,23 +39,24 @@ function [out, bboxes, centroids, UnqLines] = improc()
     Img = rgb2gray(frame);
 %     Img = imadjust(Img, [0.3 0.6]);
 %     Img = imsharpen(Img, 'Amount',1.2);
-%         Img = medfilt2(Img);
-%     Img = imdiffusefilt(Img, 'NumberOfIterations', 10);
+%       Img = medfilt2(Img, [3 3]);
+%         Img = imdiffusefilt(Img, 'NumberOfIterations', 10);
 %     Img = imguidedfilter(Img);
 %     Img = fibermetric(Img, 'ObjectPolarity', 'dark');
 %     BW = imbinarize(Img, 0.2);
 %     BW = imbinarize(Img);
-    Img = imgaussfilt(Img, 5);
-    out = edge(Img, 'Canny', [0.1 0.2]);
+    Img = imgaussfilt(Img, 3.5);
+
+    out = edge(Img, 'Canny', [0.02 0.2]);
 %     out = imclose(out, 25);
 %     out2 = edge(rgb2gray(frame), 'Sobel');
     
     % Finding straigth lines using Hough transform
-    [H,T,R] = hough(out, 'RhoResolution', 1);
+    [H,T,R] = hough(out, 'RhoResolution', 0.5);
 %     P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
 %     lines = houghlines(BW, T, R, P, 'FillGap', 5, 'MinLength', 7);
-    P  = houghpeaks(H, 3, 'threshold', ceil(0.1*max(H(:))));
-    newlines = houghlines(out, T, R, P, 'FillGap', 10, 'MinLength', 20);
+    P  = houghpeaks(H, 30, 'threshold', ceil(0.35*max(H(:))));
+    UnqLines = houghlines(out, T, R, P, 'FillGap', 10);
     out = uint8(repmat(out, 1, 1, 3)) .* 255;
     
 %     % Filtering low area bounding boxes
@@ -78,37 +78,37 @@ function [out, bboxes, centroids, UnqLines] = improc()
 %     UnqLines = UnqLines(1,newInd);
 
     
-    % Checking for points on the same line
-    findEqMat = [newlines.theta; newlines.rho]';
-    [u, I, ~] = unique(findEqMat, 'rows', 'first');
-    hasDuplicates = size(u, 1) < size(findEqMat, 1);
-    if hasDuplicates
-        ixDupRows = setdiff(1:size(findEqMat,1), I);
-        dupRowValues = unique(findEqMat(ixDupRows, :), 'rows');
-        sameInd = cell(1, size(dupRowValues, 1));
-        for kk = 1:size(dupRowValues, 1)
-            [tmp, ~] = find(findEqMat == dupRowValues(kk,:));
-            sameInd{1, kk} = unique(tmp');
-        end
-            uniqInd = setdiff(1:length(newlines), ...
-                unique(cell2mat(sameInd)));
-            UnqLines = newlines(1, uniqInd);         
-        for j=1:length(sameInd)
-            store1 = ones(1, length(sameInd{j})); 
-            store2 = ones(1, length(sameInd{j}));
-            for k = 1:length(sameInd{j})
-                store1(k) = newlines(sameInd{j}(k)).point1(1);
-                store2(k) = newlines(sameInd{j}(k)).point2(1);
-            end
-            [~, index1] = min(store1);
-            [~, index2] = max(store2);
-            newlines(sameInd{j}(index2)).point1 = ...
-                newlines(sameInd{j}(index1)).point1;
-            UnqLines(end + 1) = newlines(sameInd{j}(index2));         
-        end
-    else
-        UnqLines = newlines; % no repetion case
-    end
+%     % Checking for points on the same line
+%     findEqMat = [newlines.theta; newlines.rho]';
+%     [u, I, ~] = unique(findEqMat, 'rows', 'first');
+%     hasDuplicates = size(u, 1) < size(findEqMat, 1);
+%     if hasDuplicates
+%         ixDupRows = setdiff(1:size(findEqMat,1), I);
+%         dupRowValues = unique(findEqMat(ixDupRows, :), 'rows');
+%         sameInd = cell(1, size(dupRowValues, 1));
+%         for kk = 1:size(dupRowValues, 1)
+%             [tmp, ~] = find(findEqMat == dupRowValues(kk,:));
+%             sameInd{1, kk} = unique(tmp');
+%         end
+%             uniqInd = setdiff(1:length(newlines), ...
+%                 unique(cell2mat(sameInd)));
+%             UnqLines = newlines(1, uniqInd);         
+%         for j=1:length(sameInd)
+%             store1 = ones(1, length(sameInd{j})); 
+%             store2 = ones(1, length(sameInd{j}));
+%             for k = 1:length(sameInd{j})
+%                 store1(k) = newlines(sameInd{j}(k)).point1(1);
+%                 store2(k) = newlines(sameInd{j}(k)).point2(1);
+%             end
+%             [~, index1] = min(store1);
+%             [~, index2] = max(store2);
+%             newlines(sameInd{j}(index2)).point1 = ...
+%                 newlines(sameInd{j}(index1)).point1;
+%             UnqLines(end + 1) = newlines(sameInd{j}(index2));         
+%         end
+%     else
+%         UnqLines = newlines; % no repetion case
+%     end
     
     % Calculating bounding boxes, centroids and stright line coefficients
     numUnqLines = length(UnqLines);
@@ -155,7 +155,7 @@ function predictNewLocationsOfTracks()
         % Shift the bounding box so that its center is at
         % the predicted location.
         tracks(i).bbox = [predictedCentroid(1) - bbox(3) / 2, ...
-           predictedCentroid(2) + bbox(4) / 2, bbox(3:4)];
+           predictedCentroid(2) - bbox(4) / 2, bbox(3:4)];
     end
 end
 %% Track detection
@@ -215,8 +215,8 @@ function deleteLostTracks()
         if isempty(tracks)
             return;
         end
-        invisibleForTooLong = 2;
-        ageThreshold = 2;
+        invisibleForTooLong = 20;
+        ageThreshold = 5;
 
         % Compute the fraction of the track's age for which it was visible.
         ages = [tracks(:).age];
@@ -299,7 +299,7 @@ function displayTrackingResults()
             point1 = reshape([UnqLines.point1],2,[])';
             point2 = reshape([UnqLines.point2],2,[])';
             frame = insertShape(frame, 'Line',[point1 point2], ...
-                'LineWidth', 10, 'Color', 'red', 'SmoothEdges', false);
+                'LineWidth', 5, 'Color', 'red', 'SmoothEdges', false);
             
             
         end
