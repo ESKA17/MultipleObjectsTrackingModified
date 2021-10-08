@@ -5,7 +5,7 @@ function MotionBasedMultiObjectTrackingModified()
 obj = setupSystemObjects();
 tracks = initializeTracks(); % Create an empty array of tracks.
 nextId = 1; % ID of the next track
-video = VideoWriter('newvideo8.mp4', 'MPEG-4');
+video = VideoWriter('newvideo9.mp4', 'MPEG-4');
 video.FrameRate = obj.reader.FrameRate;
 numFrames = obj.reader.NumFrames;
 
@@ -33,43 +33,44 @@ close(video);
 %% Image processing
 function [out, bboxes, centroids, UnqLines, Img] = improc()
     Img = rgb2gray(frame);
-    Img = imadjust(Img, [0.3 0.6]);
-    Img = imsharpen(Img, 'Amount',1.2);
+%     Img = imadjust(Img, [0.3 0.6]);
+%     Img = imsharpen(Img, 'Amount',1.2);
 %         Img = medfilt2(Img);
-    Img = imdiffusefilt(Img, 'NumberOfIterations', 10);
+%     Img = imdiffusefilt(Img, 'NumberOfIterations', 10);
 %     Img = imguidedfilter(Img);
 %     Img = fibermetric(Img, 'ObjectPolarity', 'dark');
 %     BW = imbinarize(Img, 0.2);
 %     BW = imbinarize(Img);
-    out = edge(Img, 'Canny', [0.1 0.5], 2);
+    Img = imgaussfilt(Img, 5);
+    out = edge(Img, 'Canny', [0.1 0.2]);
 %     out = imclose(out, 25);
 %     out2 = edge(rgb2gray(frame), 'Sobel');
     
     % Finding straigth lines using Hough transform
-    [H,T,R] = hough(out);
+    [H,T,R] = hough(out, 'RhoResolution',1);
 %     P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
 %     lines = houghlines(BW, T, R, P, 'FillGap', 5, 'MinLength', 7);
-    P  = houghpeaks(H, 3);
-    UnqLines = houghlines(out, T, R, P, 'FillGap', 50);
+    P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
+    UnqLines = houghlines(out, T, R, P, 'FillGap', 10, 'MinLength', 20);
     out = uint8(repmat(out, 1, 1, 3)) .* 255;
     
-    % Filtering low area bounding boxes
-    numLin = length(UnqLines);
-    missInd = [];
-    indArray = 1:numLin;
-    bbtmp = ones(numLin, 4);
-    
-    for k = indArray
-        xy = [UnqLines(k).point1; UnqLines(k).point2];      
-        bbtmp(k, :) = round([xy(1, 1) max([xy(1, 2) xy(2, 2)])...
-            (xy(2, 1) - xy(1, 1)) abs(xy(2, 2) - xy(1, 2))]);
-        tmpSum = bbtmp(k, 3) + bbtmp(k, 4); % Vertical lines filtering
-        if tmpSum < 50 % Elminating small bboxes
-            missInd(end + 1) = k;
-        end
-    end
-    newInd = setdiff(indArray, missInd);
-    UnqLines = UnqLines(1,newInd);
+%     % Filtering low area bounding boxes
+%     numLin = length(UnqLines);
+%     missInd = [];
+%     indArray = 1:numLin;
+%     bbtmp = ones(numLin, 4);
+%     
+%     for k = indArray
+%         xy = [UnqLines(k).point1; UnqLines(k).point2];      
+%         bbtmp(k, :) = round([xy(1, 1) max([xy(1, 2) xy(2, 2)])...
+%             (xy(2, 1) - xy(1, 1)) abs(xy(2, 2) - xy(1, 2))]);
+%         tmpSum = bbtmp(k, 3) + bbtmp(k, 4); % Vertical lines filtering
+%         if tmpSum < 50 % Elminating small bboxes
+%             missInd(end + 1) = k;
+%         end
+%     end
+%     newInd = setdiff(indArray, missInd);
+%     UnqLines = UnqLines(1,newInd);
 
     
 %     % Checking for points on the same line
