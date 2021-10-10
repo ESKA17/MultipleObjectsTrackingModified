@@ -1,0 +1,2 @@
+load coefcheck
+interp1()

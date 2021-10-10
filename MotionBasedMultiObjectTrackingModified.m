@@ -1,7 +1,8 @@
-readfrom = 'example3.mp4';
-writeto = 'newvideo10.mp4';
-[unqlines, tracks] = MotionBasedMultiObject(readfrom, writeto);
-function [frame_lines, tracks] = MotionBasedMultiObject(read, write)
+readfrom = 'example4.mp4';
+writeto = 'myvideo4_1.mp4';
+[unqlines, tracks, coefstr, pts] = MotionBasedMultiObject(readfrom, writeto);
+function [frame_lines, tracks, coefstr, pts] = ...
+    MotionBasedMultiObject(read, write)
 % Create System objects used for reading video, detecting moving objects,
 % and displaying the results.
 obj = setupSystemObjects();
@@ -11,13 +12,16 @@ video = VideoWriter(write, 'MPEG-4');
 video.FrameRate = obj.reader.FrameRate;
 numFrames = obj.reader.NumFrames;
 frame_lines = repmat(struct,1,numFrames);
+coefstr = cell(numFrames, 1);
 % Detect moving objects, and track them across video frames.
 open(video);
 frame_count = 1;
 while hasFrame(obj.reader)
+% while frame_count < 60
     
     frame = readFrame(obj.reader);
-    [out, bboxes, centroids, UnqLines] = improc();
+    [out, bboxes, centroids, UnqLines, coef, pts] = improc();
+    coefstr{frame_count} = coef;
     frame_lines(frame_count).unqlines = UnqLines;
     Isub = imsubtract(out(:,:,2), rgb2gray(out));
     mask = imbinarize(Isub); 
@@ -35,28 +39,28 @@ end
 close(video);
 
 %% Image processing
-function [out, bboxes, centroids, UnqLines] = improc()
+function [out, bboxes, centroids, UnqLines, coef, pts] = improc()
     Img = rgb2gray(frame);
+    % set of filters
 %     Img = imadjust(Img, [0.3 0.6]);
 %     Img = imsharpen(Img, 'Amount',1.2);
-%       Img = medfilt2(Img, [3 3]);
-%         Img = imdiffusefilt(Img, 'NumberOfIterations', 10);
+%     Img = medfilt2(Img, [3 3]);
+%     Img = imdiffusefilt(Img, 'NumberOfIterations', 10);
 %     Img = imguidedfilter(Img);
 %     Img = fibermetric(Img, 'ObjectPolarity', 'dark');
 %     BW = imbinarize(Img, 0.2);
 %     BW = imbinarize(Img);
     Img = imgaussfilt(Img, 3.5);
-
     out = edge(Img, 'Canny', [0.02 0.2]);
 %     out = imclose(out, 25);
 %     out2 = edge(rgb2gray(frame), 'Sobel');
     
     % Finding straigth lines using Hough transform
-    [H,T,R] = hough(out, 'RhoResolution', 0.5);
+    [H,T,R] = hough(out, 'RhoResolution', 1);
 %     P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
 %     lines = houghlines(BW, T, R, P, 'FillGap', 5, 'MinLength', 7);
-    P  = houghpeaks(H, 30, 'threshold', ceil(0.35*max(H(:))));
-    UnqLines = houghlines(out, T, R, P, 'FillGap', 10);
+    P  = houghpeaks(H, 5, 'threshold', ceil(0.35*max(H(:))));
+    UnqLines = houghlines(out, T, R, P);
     out = uint8(repmat(out, 1, 1, 3)) .* 255;
     
 %     % Filtering low area bounding boxes
@@ -78,7 +82,7 @@ function [out, bboxes, centroids, UnqLines] = improc()
 %     UnqLines = UnqLines(1,newInd);
 
     
-%     % Checking for points on the same line
+%     % Checking for points on the same line -----> needs to be corrected
 %     findEqMat = [newlines.theta; newlines.rho]';
 %     [u, I, ~] = unique(findEqMat, 'rows', 'first');
 %     hasDuplicates = size(u, 1) < size(findEqMat, 1);
@@ -114,16 +118,45 @@ function [out, bboxes, centroids, UnqLines] = improc()
     numUnqLines = length(UnqLines);
     bboxes = ones(numUnqLines, 4);
     centroids = ones(numUnqLines, 2);
+    coef = ones(numUnqLines, 2);
     point1 = reshape([UnqLines.point1], 2, [])';
     point2 = reshape([UnqLines.point2], 2, [])';
-    for m = 1:numUnqLines      
-        bboxes(m, :) = round([point1(m, 1) max([point1(m, 1) point2(m, 2)])...
-            (point2(m, 1) - point1(m, 1)) abs(point2(m, 2) - point1(m, 2))]);
-        centroids(m, :) = round([point1(m, 1) + (point2(m, 1) - point1(m, 1))/2, ...
-            min([point1(m, 2) point2(m, 2)]) + abs(point2(m, 2) - point1(m, 2))/2]);
+    pts = ones(numUnqLines, 4);
+    mnan = [];
+    for m = 1:numUnqLines
+        if point1(m, 1) == point2(m, 1)
+            coef(m, :) = [NaN, point1(m, 1)];
+            mnan(end+1) = m;
+        else
+            coef(m, :) = polyfit([point1(m, 1), point2(m, 1)], ...
+                [point1(m, 2), point2(m, 2)], 1);
+        end
+        pts(m, :) = lineToBorderPoints([coef(m, 1), -1, coef(m, 2)], ...
+            size(Img));
+        bboxes(m, :) = round([pts(m, 1), ...
+            max([pts(m, 2) pts(m, 4)])...
+            (pts(m, 3) - pts(m, 1)), ...
+            abs(pts(m, 4) - pts(m, 2))]);
+        centroids(m, :) = round([pts(m, 1) + (pts(m, 3) - pts(m, 1))/2, ...
+            min([pts(m, 2) pts(m, 4)]) + abs(pts(m, 4) - pts(m, 2))/2]);
     end
-    out = insertShape(out, 'Line',[point1 point2], ...
+
+    if ~isempty(mnan)
+        for mn = mnan
+            bboxes(mnan(mn), :) = [round(coef(mn, 2)), size(Img, 1), ...
+                0, size(Img, 1)];
+            centroids(m, :) = round([coef(mn, 2), ...
+                size(Img, 1)/2]);
+%         out = insertShape(out, 'Line', [coef(mn, 2), 0, ...
+%             coef(mn, 2) size(Img, 1)], ...
+%             'LineWidth', 3, 'Color', 'green', 'SmoothEdges', false);
+        end
+        pts = pts(~mnan, :);
+    end
+    out = insertShape(out, 'Line', [point1 point2], ...
                 'LineWidth', 3, 'Color', 'green', 'SmoothEdges', false);
+
+    
 end
 %% Initialize Video I/O 
  function obj = setupSystemObjects()
@@ -171,7 +204,7 @@ end
         end
         
         % Solve the assignment problem.
-        costOfNonAssignment = 20;
+        costOfNonAssignment = 50;
         [assignments, unassignedTracks, unassignedDetections] = ...
             assignDetectionsToTracks(cost, costOfNonAssignment);
  end
@@ -215,8 +248,8 @@ function deleteLostTracks()
         if isempty(tracks)
             return;
         end
-        invisibleForTooLong = 20;
-        ageThreshold = 5;
+        invisibleForTooLong = 30;
+        ageThreshold = 20;
 
         % Compute the fraction of the track's age for which it was visible.
         ages = [tracks(:).age];
@@ -263,7 +296,7 @@ function displayTrackingResults()
     % Convert the frame and the mask to uint8 RGB.
     frame = im2uint8(frame);
     mask = uint8(repmat(mask, [1, 1, 3])) .* 255;
-    minVisibleCount = 5;
+    minVisibleCount = 10;
     if ~isempty(tracks)
         
         % Noisy detections tend to result in short-lived tracks.
@@ -293,12 +326,13 @@ function displayTrackingResults()
             labels = strcat(labels, isPredicted);
             
             % Draw the objects on the frame.
-%             frame = insertObjectAnnotation(frame, 'circle', ...
-%                 [bboxes(:, 1)+bboxes(:, 3)/2 bboxes(:, 2)-bboxes(:, 4)/2 ...
-%                 10*ones(size(bboxes, 1), 1)], labels);
-            point1 = reshape([UnqLines.point1],2,[])';
-            point2 = reshape([UnqLines.point2],2,[])';
-            frame = insertShape(frame, 'Line',[point1 point2], ...
+            frame = insertObjectAnnotation(frame, 'circle', ...
+                [bboxes(:, 1)+bboxes(:, 3)/2, ...
+                bboxes(:, 2)-bboxes(:, 4)/2, ...
+                10*ones(size(bboxes, 1), 1)], labels);
+%             point1 = reshape([UnqLines.point1],2,[])';
+%             point2 = reshape([UnqLines.point2],2,[])';
+            frame = insertShape(frame, 'Line', pts, ...
                 'LineWidth', 5, 'Color', 'red', 'SmoothEdges', false);
             
             
