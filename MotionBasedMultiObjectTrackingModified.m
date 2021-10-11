@@ -1,7 +1,8 @@
-readfrom = 'example4.mp4';
-writeto = 'myvideo4_1.mp4';
-[unqlines, tracks, coefstr, pts] = MotionBasedMultiObject(readfrom, writeto);
-function [frame_lines, tracks, coefstr, pts] = ...
+readfrom = 'example2.mp4';
+writeto = 'myvideo2_1.mp4';
+[unqlines, tracks, coefstr, pts, centrs] = ...
+    MotionBasedMultiObject(readfrom, writeto);
+function [frame_lines, tracks, coefstr, pts, centrs] = ...
     MotionBasedMultiObject(read, write)
 % Create System objects used for reading video, detecting moving objects,
 % and displaying the results.
@@ -12,6 +13,7 @@ video = VideoWriter(write, 'MPEG-4');
 video.FrameRate = obj.reader.FrameRate;
 numFrames = obj.reader.NumFrames;
 frame_lines = repmat(struct,1,numFrames);
+centrs = cell(numFrames, 1);
 coefstr = cell(numFrames, 1);
 % Detect moving objects, and track them across video frames.
 open(video);
@@ -20,11 +22,32 @@ while hasFrame(obj.reader)
 % while frame_count < 60
     
     frame = readFrame(obj.reader);
-    [out, bboxes, centroids, UnqLines, coef, pts] = improc();
+    [out, bboxes, mask, centroids, UnqLines, coef, pts] = improc();
+    tmpk = [];
+    oldl = size(centroids, 1);
+    newl = 1;
+%     oldcentr = centroids;
+    while oldl > newl
+        oldl = size(centroids, 1);
+        tmpv = centroids(newl, :);
+        tmp = centroids(setdiff(1:end, newl), :);
+        [~, dist] = dsearchn(tmp, tmpv);
+        if dist > 7
+            newl = newl + 1;
+            continue
+        else
+            tmpk(end+1) = newl;
+            centroids = tmp;
+%             newl = newl + 1;
+        end
+    end 
+    for t = tmpk     
+        bboxes = bboxes(setdiff(1:end, t), :);
+    end
+    out = insertMarker(out, centroids, 'o', 'Size', 10, 'Color', 'red');
     coefstr{frame_count} = coef;
+    centrs{frame_count} = centroids;
     frame_lines(frame_count).unqlines = UnqLines;
-    Isub = imsubtract(out(:,:,2), rgb2gray(out));
-    mask = imbinarize(Isub); 
     predictNewLocationsOfTracks();
     [assignments, unassignedTracks, unassignedDetections] = ...
         detectionToTrackAssignment();
@@ -39,9 +62,9 @@ end
 close(video);
 
 %% Image processing
-function [out, bboxes, centroids, UnqLines, coef, pts] = improc()
+function [out, bboxes, mask, centroids, UnqLines, coef, pts] = improc()
     Img = rgb2gray(frame);
-    % set of filters
+    % A set of filters
 %     Img = imadjust(Img, [0.3 0.6]);
 %     Img = imsharpen(Img, 'Amount',1.2);
 %     Img = medfilt2(Img, [3 3]);
@@ -49,18 +72,17 @@ function [out, bboxes, centroids, UnqLines, coef, pts] = improc()
 %     Img = imguidedfilter(Img);
 %     Img = fibermetric(Img, 'ObjectPolarity', 'dark');
 %     BW = imbinarize(Img, 0.2);
-%     BW = imbinarize(Img);
     Img = imgaussfilt(Img, 3.5);
-    out = edge(Img, 'Canny', [0.02 0.2]);
+    out = edge(Img, 'Canny', [0.01 0.3]);
 %     out = imclose(out, 25);
-%     out2 = edge(rgb2gray(frame), 'Sobel');
+%     out2 = edge(rgb2gray(frame), 'Roberts');
     
     % Finding straigth lines using Hough transform
     [H,T,R] = hough(out, 'RhoResolution', 1);
 %     P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
 %     lines = houghlines(BW, T, R, P, 'FillGap', 5, 'MinLength', 7);
-    P  = houghpeaks(H, 5, 'threshold', ceil(0.35*max(H(:))));
-    UnqLines = houghlines(out, T, R, P);
+    P  = houghpeaks(H, 3, 'threshold', ceil(0.05*max(H(:))));
+    UnqLines = houghlines(out, T, R, P, 'FillGap', 10);
     out = uint8(repmat(out, 1, 1, 3)) .* 255;
     
 %     % Filtering low area bounding boxes
@@ -133,30 +155,31 @@ function [out, bboxes, centroids, UnqLines, coef, pts] = improc()
         end
         pts(m, :) = lineToBorderPoints([coef(m, 1), -1, coef(m, 2)], ...
             size(Img));
-        bboxes(m, :) = round([pts(m, 1), ...
-            max([pts(m, 2) pts(m, 4)])...
-            (pts(m, 3) - pts(m, 1)), ...
-            abs(pts(m, 4) - pts(m, 2))]);
-        centroids(m, :) = round([pts(m, 1) + (pts(m, 3) - pts(m, 1))/2, ...
-            min([pts(m, 2) pts(m, 4)]) + abs(pts(m, 4) - pts(m, 2))/2]);
+        bboxes(m, :) = [min([pts(m, 1), pts(m, 3)]), ...
+            max([pts(m, 2) pts(m, 4)]), ...
+            abs(pts(m, 3) - pts(m, 1)), abs(pts(m, 4) - pts(m, 2))];
+        centroids(m, :) = [min([pts(m, 1), pts(m, 3)]) + ...
+            abs(pts(m, 3) - pts(m, 1))/2, ...
+            min([pts(m, 2) pts(m, 4)]) + abs(pts(m, 2) - pts(m, 4))/2];
     end
-
     if ~isempty(mnan)
         for mn = mnan
-            bboxes(mnan(mn), :) = [round(coef(mn, 2)), size(Img, 1), ...
-                0, size(Img, 1)];
-            centroids(m, :) = round([coef(mn, 2), ...
-                size(Img, 1)/2]);
-%         out = insertShape(out, 'Line', [coef(mn, 2), 0, ...
-%             coef(mn, 2) size(Img, 1)], ...
-%             'LineWidth', 3, 'Color', 'green', 'SmoothEdges', false);
+            bboxes(mn, :) = [coef(mn, 2), size(Img, 2), ...
+                0, size(Img, 2)];
+            centroids(m, :) = [coef(mn, 2), ...
+                size(Img, 2)/2];
+        out = insertShape(out, 'Line', [coef(mn, 2), 0,  ...
+            coef(mn, 2), size(Img, 2)], ...
+            'LineWidth', 3, 'Color', 'green', 'SmoothEdges', false);
         end
         pts = pts(~mnan, :);
     end
     out = insertShape(out, 'Line', [point1 point2], ...
                 'LineWidth', 3, 'Color', 'green', 'SmoothEdges', false);
-
+    Isub = imsubtract(out(:,:,2), rgb2gray(out));
+    mask = imbinarize(Isub); 
     
+   
 end
 %% Initialize Video I/O 
  function obj = setupSystemObjects()
@@ -176,7 +199,8 @@ function tracks = initializeTracks()
         'kalmanFilter', {}, ...
         'age', {}, ...
         'totalVisibleCount', {}, ...
-        'consecutiveInvisibleCount', {});
+        'consecutiveInvisibleCount', {}, ...
+        'costfunsum', {});
 end
 %% Predicting new locations of tracks
 function predictNewLocationsOfTracks()
@@ -188,7 +212,7 @@ function predictNewLocationsOfTracks()
         % Shift the bounding box so that its center is at
         % the predicted location.
         tracks(i).bbox = [predictedCentroid(1) - bbox(3) / 2, ...
-           predictedCentroid(2) - bbox(4) / 2, bbox(3:4)];
+           predictedCentroid(2) + bbox(4) / 2, bbox(3:4)];
     end
 end
 %% Track detection
@@ -204,7 +228,7 @@ end
         end
         
         % Solve the assignment problem.
-        costOfNonAssignment = 50;
+        costOfNonAssignment = 20;
         [assignments, unassignedTracks, unassignedDetections] = ...
             assignDetectionsToTracks(cost, costOfNonAssignment);
  end
@@ -248,8 +272,8 @@ function deleteLostTracks()
         if isempty(tracks)
             return;
         end
-        invisibleForTooLong = 30;
-        ageThreshold = 20;
+        invisibleForTooLong = 10;
+        ageThreshold = 10;
 
         % Compute the fraction of the track's age for which it was visible.
         ages = [tracks(:).age];
@@ -257,7 +281,7 @@ function deleteLostTracks()
         visibility = totalVisibleCounts ./ ages;
 
         % Find the indices of 'lost' tracks.
-        lostInds = (ages < ageThreshold & visibility < 0.6) | ...
+        lostInds = (ages < ageThreshold & visibility < 0.5) | ...
             [tracks(:).consecutiveInvisibleCount] >= invisibleForTooLong;
 
         % Delete lost tracks.
@@ -272,8 +296,8 @@ function createNewTracks()
             bbox = bboxes(i, :);
 
             % Create a Kalman filter object.
-            kalmanFilter = configureKalmanFilter('ConstantAcceleration',...
-                centroid, [200 1 0.1], [200, 1, 0.1], 1);
+            kalmanFilter = configureKalmanFilter('ConstantVelocity',...
+                centroid, [20 1], [20, 1], 1);
 
             % Create a new track.
             newTrack = struct(...
@@ -282,7 +306,8 @@ function createNewTracks()
                 'kalmanFilter', kalmanFilter, ...
                 'age', 1, ...
                 'totalVisibleCount', 1, ...
-                'consecutiveInvisibleCount', 0);
+                'consecutiveInvisibleCount', 0, ...
+                'costfunsum', 0);
 
             % Add it to the array of tracks.
             tracks(end + 1) = newTrack;
@@ -296,7 +321,7 @@ function displayTrackingResults()
     % Convert the frame and the mask to uint8 RGB.
     frame = im2uint8(frame);
     mask = uint8(repmat(mask, [1, 1, 3])) .* 255;
-    minVisibleCount = 10;
+    minVisibleCount = 50;
     if ~isempty(tracks)
         
         % Noisy detections tend to result in short-lived tracks.
@@ -329,9 +354,8 @@ function displayTrackingResults()
             frame = insertObjectAnnotation(frame, 'circle', ...
                 [bboxes(:, 1)+bboxes(:, 3)/2, ...
                 bboxes(:, 2)-bboxes(:, 4)/2, ...
-                10*ones(size(bboxes, 1), 1)], labels);
-%             point1 = reshape([UnqLines.point1],2,[])';
-%             point2 = reshape([UnqLines.point2],2,[])';
+                5*ones(size(bboxes, 1), 1)], labels);
+
             frame = insertShape(frame, 'Line', pts, ...
                 'LineWidth', 5, 'Color', 'red', 'SmoothEdges', false);
             
