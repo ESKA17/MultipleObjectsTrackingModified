@@ -1,4 +1,4 @@
-readfrom = 'example4.mp4'; writeto = 'myvideo4_4.mp4';
+readfrom = 'alpha1.mp4'; writeto = 'test';
 [unqlines, tracks, coefstr, pts, centrs] = ...
     MotionBasedMultiObject(readfrom, writeto);
 function [frame_lines, tracks, coefstr, pts, centrs] = ...
@@ -11,7 +11,7 @@ nextId = 1; % ID of the next track
 video = VideoWriter(write, 'MPEG-4');
 video.FrameRate = obj.reader.FrameRate;
 numFrames = obj.reader.NumFrames; 
-width = obj.reader.Width; height = obj.reader.Height;
+% width = obj.reader.Width; height = obj.reader.Height;
 frame_lines = repmat(struct,1,numFrames);
 centrs = cell(numFrames, 1);
 coefstr = cell(numFrames, 1);
@@ -48,7 +48,7 @@ function [out, bboxes, centroids, UnqLines, coef, pts] = improc()
 %     Img = imguidedfilter(Img);
 %     Img = fibermetric(Img, 'ObjectPolarity', 'dark');
 %     BW = imbinarize(Img, 0.2);
-    Img = imgaussfilt(Img, 3.5);
+    Img = imgaussfilt(Img, 2);
     out = edge(Img, 'Canny', [0.001 0.2]);
 %     out = bwareaopen(out, 30);
 %     out = imclose(out, 50);
@@ -58,8 +58,8 @@ function [out, bboxes, centroids, UnqLines, coef, pts] = improc()
     [H,T,R] = hough(out, 'RhoResolution', 1);
 %     P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
 %     lines = houghlines(BW, T, R, P, 'FillGap', 5, 'MinLength', 7);
-    P  = houghpeaks(H, 3);
-    UnqLines = houghlines(out, T, R, P, 'MinLength', 140);
+    P  = houghpeaks(H, 1);
+    UnqLines = houghlines(out, T, R, P, 'MinLength', 100);
     out = uint8(repmat(out, 1, 1, 3)) .* 255;
     
 %     % Filtering low area bounding boxes
@@ -285,7 +285,7 @@ function createNewTracks()
         
         % Create a Kalman filter object.
         kalmanFilter = configureKalmanFilter('ConstantAcceleration',...
-            centroid, [1e1 1 1], [1e1, 1 1], 1*1e1);
+            centroid, [5e1 1 1], [5e1, 1 1], 1*1e1);
         
         % Create a new track.
         newTrack = struct(...
@@ -312,7 +312,7 @@ function displayTrackingResults()
                 'Color', 'red', 'SmoothEdges', false);
 %     mask = uint8(repmat(mask, [1, 1, 3])) .* 255;
 %     Img = uint8(repmat(Img, [1, 1, 3]));
-    minVisibleCount = 15;
+    minVisibleCount = 70;
     if ~isempty(tracks)
         
         % Noisy detections tend to result in short-lived tracks.
@@ -336,10 +336,9 @@ function displayTrackingResults()
                 slope = (relpts(i, 3) - relpts(i, 1))./ ...
                     (relpts(i, 2) - relpts(i, 4));
                 angle(i) = atand(slope);
-                position(i, :) = [1, 25*(i-1)];
+                position(i, :) = [1, 200+60*(i-1)];
             end
             angle = cellstr(int2str(angle'));
-            
             
             % Get ids.
             ids = int32([reliableTracks(:).id]);
@@ -349,7 +348,7 @@ function displayTrackingResults()
             % location.
             labels = cellstr(int2str(ids'));
             predictedTrackInds = ...
-                [reliableTracks(:).consecutiveInvisibleCount] > 10;
+                [reliableTracks(:).consecutiveInvisibleCount] > 30;
             isPredicted = cell(size(labels));
             isPredicted(predictedTrackInds) = {' predicted'};
             labels = strcat(labels, isPredicted);
@@ -360,7 +359,8 @@ function displayTrackingResults()
                 [bboxes(:, 1)+bboxes(:, 3)/2, ...
                 bboxes(:, 2)-bboxes(:, 4)/2, ...
                 5*ones(size(bboxes, 1), 1)], labels);
-            frame = insertText(frame, position, anglelabels);
+            frame = insertText(frame, position, anglelabels, ...
+                'FontSize', 30);
         end
     end
     
