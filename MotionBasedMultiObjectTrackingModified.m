@@ -1,4 +1,4 @@
-readfrom = 'example4.mp4'; writeto = 'myvideo4_1.mp4';
+readfrom = 'example4.mp4'; writeto = 'myvideo4_4.mp4';
 [unqlines, tracks, coefstr, pts, centrs] = ...
     MotionBasedMultiObject(readfrom, writeto);
 function [frame_lines, tracks, coefstr, pts, centrs] = ...
@@ -10,7 +10,8 @@ tracks = initializeTracks(); % Create an empty array of tracks.
 nextId = 1; % ID of the next track
 video = VideoWriter(write, 'MPEG-4');
 video.FrameRate = obj.reader.FrameRate;
-numFrames = obj.reader.NumFrames;
+numFrames = obj.reader.NumFrames; 
+width = obj.reader.Width; height = obj.reader.Height;
 frame_lines = repmat(struct,1,numFrames);
 centrs = cell(numFrames, 1);
 coefstr = cell(numFrames, 1);
@@ -48,18 +49,17 @@ function [out, bboxes, centroids, UnqLines, coef, pts] = improc()
 %     Img = fibermetric(Img, 'ObjectPolarity', 'dark');
 %     BW = imbinarize(Img, 0.2);
     Img = imgaussfilt(Img, 3.5);
-    out = edge(Img, 'Canny', [0.1 0.2]);
+    out = edge(Img, 'Canny', [0.001 0.2]);
 %     out = bwareaopen(out, 30);
 %     out = imclose(out, 50);
-    
 %     out2 = edge(rgb2gray(frame), 'Roberts');
     
     % Finding straigth lines using Hough transform
     [H,T,R] = hough(out, 'RhoResolution', 1);
 %     P  = houghpeaks(H, 3, 'threshold', ceil(0.3*max(H(:))));
 %     lines = houghlines(BW, T, R, P, 'FillGap', 5, 'MinLength', 7);
-    P  = houghpeaks(H, 3, 'threshold', ceil(0.05*max(H(:))));
-    UnqLines = houghlines(out, T, R, P);
+    P  = houghpeaks(H, 3);
+    UnqLines = houghlines(out, T, R, P, 'MinLength', 140);
     out = uint8(repmat(out, 1, 1, 3)) .* 255;
     
 %     % Filtering low area bounding boxes
@@ -79,9 +79,9 @@ function [out, bboxes, centroids, UnqLines, coef, pts] = improc()
 %     end
 %     newInd = setdiff(indArray, missInd);
 %     UnqLines = UnqLines(1,newInd);
-
-    
+   
 %     % Checking for points on the same line -----> needs to be corrected
+%     to be based on coefficients rather than output from houghlines
 %     findEqMat = [newlines.theta; newlines.rho]';
 %     [u, I, ~] = unique(findEqMat, 'rows', 'first');
 %     hasDuplicates = size(u, 1) < size(findEqMat, 1);
@@ -114,14 +114,11 @@ function [out, bboxes, centroids, UnqLines, coef, pts] = improc()
 %     end
     
     % Calculating bounding boxes, centroids and stright line coefficients
-    numUnqLines = length(UnqLines);
-    bboxes = ones(numUnqLines, 4);
-    centroids = ones(numUnqLines, 2);
-    coef = ones(numUnqLines, 2);
+    numUnqLines = length(UnqLines); mnan = [];
+    bboxes = ones(numUnqLines, 4); centroids = ones(numUnqLines, 2);
+    coef = ones(numUnqLines, 2); pts = ones(numUnqLines, 4);
     point1 = reshape([UnqLines.point1], 2, [])';
     point2 = reshape([UnqLines.point2], 2, [])';
-    pts = ones(numUnqLines, 4);
-    mnan = [];
     for m = 1:numUnqLines
         if point1(m, 1) == point2(m, 1)
             coef(m, :) = [NaN, point1(m, 1)]; mnan(end+1) = m;
@@ -146,19 +143,14 @@ function [out, bboxes, centroids, UnqLines, coef, pts] = improc()
             pts(mn, :) = [coef(mn, 2) 0.5 coef(mn, 2) 720.5];
         end
     end
-    if frame_count == 72
-        a=1;
-    end
     tmpk = []; oldl = 2; newl = 1;
     while oldl > newl && size(centroids, 1) > 1
         oldl = size(centroids, 1);
         tmpv = centroids(newl, :);
         tmp = centroids(setdiff(1:end, newl), :);
         [~, dist] = dsearchn(tmp, tmpv);
-        if dist > 10
-            newl = newl + 1; continue
-        else
-            tmpk(end+1) = newl; centroids = tmp;
+        if dist > 10, newl = newl + 1; continue
+        else, tmpk(end+1) = newl; centroids = tmp;
         end
     end 
     for t = tmpk     
@@ -191,7 +183,7 @@ function tracks = initializeTracks()
         'age', {}, ...
         'totalVisibleCount', {}, ...
         'consecutiveInvisibleCount', {}, ...
-        'pts', {});
+        'endpts', {});
 end
 %% Predicting new locations of tracks
 function predictNewLocationsOfTracks()
@@ -216,12 +208,13 @@ end
         cost = zeros(nTracks, nDetections);
         for i = 1:nTracks
             cost(i, :) = distance(tracks(i).kalmanFilter, centroids);
+%             tracks(i).mvmnt = cost(i, :);
         end
         
         % Solve the assignment problem.
-        costOfNonAssignment = 50;
+        costOfNonAssignment = 70;
         [assignments, unassignedTracks, unassignedDetections] = ...
-            assignDetectionsToTracks(cost, costOfNonAssignment);
+            assignDetectionsToTracks(cost, costOfNonAssignment, 100);
  end
 %% Updating tracks
 function updateAssignedTracks()
@@ -240,7 +233,7 @@ function updateAssignedTracks()
         % Replace predicted bounding box with detected
         % bounding box.
         tracks(trackIdx).bbox = bbox;
-        tracks(trackIdx).pts = pt;
+        tracks(trackIdx).endpts = pt;
 
         
         % Update track's age.
@@ -265,7 +258,7 @@ end
 function deleteLostTracks()
         if isempty(tracks), return;
         end
-        invisibleForTooLong = 10;
+        invisibleForTooLong = 30;
         ageThreshold = 10;
 
         % Compute the fraction of the track's age for which it was visible.
@@ -284,15 +277,15 @@ end
 function createNewTracks()
     centroids = centroids(unassignedDetections, :);
     bboxes = bboxes(unassignedDetections, :);
-    pts = pts(unassignedDetections, :);
+    endpts = pts(unassignedDetections, :);
     
     for i = 1:size(centroids, 1)
         centroid = centroids(i, :); bbox = bboxes(i, :);
-        pt = pts(i, :);
+        pt = endpts(i, :);
         
         % Create a Kalman filter object.
         kalmanFilter = configureKalmanFilter('ConstantAcceleration',...
-            centroid, [100 10 10], [100, 10 10], 10);
+            centroid, [1e1 1 1], [1e1, 1 1], 1*1e1);
         
         % Create a new track.
         newTrack = struct(...
@@ -302,7 +295,7 @@ function createNewTracks()
             'age', 1, ...
             'totalVisibleCount', 1, ...
             'consecutiveInvisibleCount', 0, ...
-            'pts', pt);
+            'endpts', pt);
         
         % Add it to the array of tracks.
         tracks(end + 1) = newTrack;
@@ -315,6 +308,8 @@ end
 function displayTrackingResults()
     % Convert the frame and the mask to uint8 RGB.
     frame = im2uint8(frame);
+    frame = insertShape(frame, 'Line', pts, 'LineWidth', 5, ...
+                'Color', 'red', 'SmoothEdges', false);
 %     mask = uint8(repmat(mask, [1, 1, 3])) .* 255;
 %     Img = uint8(repmat(Img, [1, 1, 3]));
     minVisibleCount = 15;
@@ -332,7 +327,19 @@ function displayTrackingResults()
         if ~isempty(reliableTracks)
             % Get bounding boxes.
             bboxes = cat(1, reliableTracks.bbox);
-            pts = cat(1, reliableTracks.pts);
+            relpts = cat(1, reliableTracks.endpts);
+            numRelTracks = size(relpts, 1);
+%             slope = zeros(1, numRelTracks);
+            angle = zeros(1, numRelTracks);
+            position = ones(numRelTracks, 2);
+            for i = 1:numRelTracks
+                slope = (relpts(i, 3) - relpts(i, 1))./ ...
+                    (relpts(i, 2) - relpts(i, 4));
+                angle(i) = atand(slope);
+                position(i, :) = [1, 25*(i-1)];
+            end
+            angle = cellstr(int2str(angle'));
+            
             
             % Get ids.
             ids = int32([reliableTracks(:).id]);
@@ -346,15 +353,14 @@ function displayTrackingResults()
             isPredicted = cell(size(labels));
             isPredicted(predictedTrackInds) = {' predicted'};
             labels = strcat(labels, isPredicted);
+            anglelabels = strcat(labels, ': ', angle, ' degree');
             
             % Draw the objects on the frame.
             frame = insertObjectAnnotation(frame, 'circle', ...
                 [bboxes(:, 1)+bboxes(:, 3)/2, ...
                 bboxes(:, 2)-bboxes(:, 4)/2, ...
                 5*ones(size(bboxes, 1), 1)], labels);
-
-            frame = insertShape(frame, 'Line', pts, 'LineWidth', 5, ...
-                'Color', 'red', 'SmoothEdges', false);
+            frame = insertText(frame, position, anglelabels);
         end
     end
     
