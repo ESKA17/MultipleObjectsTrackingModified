@@ -1,4 +1,4 @@
-readfrom = 'alpha1.mp4'; writeto = 'test2';
+readfrom = 'alpha2.mp4'; writeto = 'test2';
 [unqlines, tracks, coefstr, pts, centrs] = ...
     MotionBasedMultiObject(readfrom, writeto);
 function [frame_lines, tracks, coefstr, pts, centrs] = ...
@@ -20,7 +20,7 @@ open(video);
 frame_count = 1;
 while hasFrame(obj.reader)
     frame = readFrame(obj.reader);
-    [out, bboxes, centroids, UnqLines, coef, pts] = improc();
+    [out, bboxes, centroids, UnqLines, coef, pts, linepts] = improc();
     coefstr{frame_count} = coef;
     centrs{frame_count} = centroids;
     frame_lines(frame_count).unqlines = UnqLines;
@@ -38,7 +38,17 @@ end
 close(video);
 
 %% Image processing
-function [out, bboxes, centroids, UnqLines, coef, pts] = improc()
+function [out, bboxes, centroids, UnqLines, coef, pts, linepts] = improc()
+% Finding sticker
+Isub = imsubtract(frame(:,:,1), rgb2gray(frame));
+Isub = imgaussfilt(Isub, 2);
+Isub = imbinarize(Isub,0.2);
+% Isub = bwareaopen(Isub, 300);
+regprops = regionprops(Isub);
+refbbox = regprops.BoundingBox;
+linepts = [refbbox(1) refbbox(2)+refbbox(4) ... 
+    refbbox(1)+refbbox(3) refbbox(2)];
+
     Img = rgb2gray(frame);
     % A set of filters
 %     Img = imadjust(Img, [0.3 0.6]);
@@ -49,6 +59,13 @@ function [out, bboxes, centroids, UnqLines, coef, pts] = improc()
 %     Img = fibermetric(Img, 'ObjectPolarity', 'dark');
 %     BW = imbinarize(Img, 0.2);
     Img = imgaussfilt(Img, 2);
+    % Filtering out sticker region
+    h = fspecial('average', 50);
+    ov = 10;
+    filtreg = roipoly(Img, [linepts(1)-ov linepts(1)-ov ...
+        linepts(3)+ov linepts(3)+ov],...
+        [linepts(2)+ov linepts(4)-ov linepts(4)-ov linepts(2)+ov]);
+    Img = roifilt2(h,Img,filtreg);
     out = edge(Img, 'Canny', [0.001 0.2]);
 %     out = bwareaopen(out, 30);
 %     out = imclose(out, 50);
@@ -117,6 +134,8 @@ function [out, bboxes, centroids, UnqLines, coef, pts] = improc()
                 'LineWidth', 3, 'Color', 'green', 'SmoothEdges', false);
     out = insertMarker(out, centroids, 'o', 'Size', 10, ...
                 'Color', 'red');
+    out = insertShape(out, 'Line', linepts, ...
+                'LineWidth', 3, 'Color', 'green', 'SmoothEdges', false);
 %     Isub = imsubtract(out(:,:,2), rgb2gray(out));
 %     mask = imbinarize(Isub);
 end
@@ -288,12 +307,15 @@ function displayTrackingResults()
 %             slope = zeros(1, numRelTracks);
             angle = zeros(1, numRelTracks);
             position = ones(numRelTracks, 2);
+            stckang = atand((linepts(3)-linepts(1))./...
+                (linepts(4)-linepts(2)))
             for i = 1:numRelTracks
                 slope = (relpts(i, 3) - relpts(i, 1))./ ...
                     (relpts(i, 2) - relpts(i, 4));
                 angle(i) = atand(slope);
                 position(i, :) = [1, 200+60*(i-1)];
             end
+            angle = angle + stckang;
             angle = cellstr(int2str(angle'));
             
             % Get ids.
@@ -316,7 +338,9 @@ function displayTrackingResults()
                 bboxes(:, 2)-bboxes(:, 4)/2, ...
                 5*ones(size(bboxes, 1), 1)], labels);
             frame = insertText(frame, position, anglelabels, ...
-                'FontSize', 30);
+                'FontSize', 30, 'BoxColor', 'green');
+            frame = insertShape(frame, 'Line', linepts, ...
+                'LineWidth', 3, 'Color', 'green', 'SmoothEdges', false);
         end
     end
     
