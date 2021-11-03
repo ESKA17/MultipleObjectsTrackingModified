@@ -4,13 +4,10 @@ function MotionBasedMultiObject()
 % Create System objects used for reading video, detecting moving objects,
 % and displaying the results.
 vid = videoinput('winvideo');
-triggerconfig(vid,'manual');
-set(vid,'TriggerRepeat',inf);
+triggerconfig(vid,'manual'); set(vid,'TriggerRepeat',inf);
 vid.FrameGrabInterval = 1;
-src = getselectedsource(vid);
-frameRates = set(src, 'FrameRate');
-fps = frameRates{1};
-src.FrameRate = fps;
+src = getselectedsource(vid); frameRates = set(src, 'FrameRate');
+fps = frameRates{1}; src.FrameRate = fps;
 tracks = initializeTracks(); % Create an empty array of tracks.
 nextId = 1; % ID of the next track
 % video.FrameRate = obj.reader.FrameRate;
@@ -18,9 +15,7 @@ nextId = 1; % ID of the next track
 % width = obj.reader.Width; height = obj.reader.Height;
 numFrames = 10000;
 % Detect moving objects, and track them across video frames.
-start(vid);
-frame_count = 1;
-warning('off','all')
+start(vid); frame_count = 1;
 figure('Name','Video capture','NumberTitle','off')
 while frame_count < numFrames+1
     trigger(vid);
