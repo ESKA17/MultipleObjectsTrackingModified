@@ -4,6 +4,7 @@ function MotionBasedMultiObjectDraft1()
 % Create System objects used for reading video, detecting moving objects,
 % and displaying the results.
 close all; imaqreset
+resp = input('With(1) or without(0) sticker?:  ');
 vid = videoinput('winvideo');
 triggerconfig(vid, 'manual'); set(vid, 'TriggerRepeat', inf);
 vid.FrameGrabInterval = 1;
@@ -353,12 +354,12 @@ function frame = displayTrackingResults(frame)
                 angle(i) = atand(slope);
                 position(i, :) = [1, 200+60*(i-1)];
             end
-            if ~isequal(linepts, [0, 0, 0, 0])
+            if ~isequal(linepts, [0, 0, 0, 0]) && resp == 1
             angle = angle + myang - 90;
             frame = insertShape(frame, 'Line', linepts, ...
                 'LineWidth', 3, 'Color', 'green', 'SmoothEdges', false);
-            frame = insertShape(frame, 'Rectangle', refbbox, ...
-                'LineWidth', 3, 'Color', 'green', 'SmoothEdges', false);
+%             frame = insertShape(frame, 'Rectangle', refbbox, ...
+%                 'LineWidth', 3, 'Color', 'green', 'SmoothEdges', false);
             end
             angle = cellstr(int2str(angle'));
             
